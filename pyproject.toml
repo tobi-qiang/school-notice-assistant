@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=75"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "school-notice-assistant"
+version = "0.1.0"
+description = "Local-first school notice archive, search, and sharing assistant"
+requires-python = ">=3.13"
+dependencies = [
+  "beautifulsoup4>=4.12,<5",
+  "flask>=3.1,<4",
+  "playwright>=1.51,<2",
+  "requests>=2.32,<3",
+  "waitress>=3.0,<4",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=8.3,<9"]
+
+[project.scripts]
+school-notice-assistant = "app.main:main"
+
+[tool.setuptools]
+packages = ["app"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

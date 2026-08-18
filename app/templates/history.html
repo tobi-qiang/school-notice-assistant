@@ -1,0 +1,6 @@
+{% extends "base.html" %}
+{% block title %}分享历史 · 学校公告助手{% endblock %}
+{% block content %}
+<section class="page-head"><p class="eyebrow">可重新复制</p><h1>分享历史</h1></section>
+{% for batch in batches %}<article class="panel"><div class="meta"><span>{{ batch.completed_at }}</span><span>同步批次至 {{ batch.through_run_id }}</span></div><pre>{{ batch.copied_text }}</pre><button class="secondary" data-copy="{{ batch.copied_text }}">复制</button></article>{% else %}<div class="empty">尚无分享历史。</div>{% endfor %}
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% block title %}设置 · 学校公告助手{% endblock %}
+{% block content %}
+<section class="page-head"><p class="eyebrow">本机配置</p><h1>AI 与语义检索</h1><p>所有功能均可留空；公告同步、关键词搜索和原文阅读不依赖 AI。</p></section>
+<section class="panel form-stack">
+  <h2>教务处统一认证</h2>
+  <p class="muted">账号密码只在苏大官方登录页输入；本程序仅加密保存登录后的会话。</p>
+  <p id="jwcAuthStatus">{{ '已保存登录态' if jwc_auth.configured else '尚未登录' }}</p>
+  <div class="actions"><button type="button" class="secondary" id="jwcLogin">登录或刷新</button><button type="button" class="secondary" id="jwcClear">清除登录态</button></div>
+</section>
+<section class="panel form-stack" data-capability="chat">
+  <h2>Chat</h2>
+  <form data-capability="chat" data-form="chat" id="chatForm" class="form-stack" action="/api/settings" method="post">
+    <label>Chat URL<input name="base_url" value="{{ config.base_url }}" placeholder="https://example.com"></label>
+    <label>Chat API Key<div class="secret-row"><input id="chatApiKey" name="api_key" type="password" value="" placeholder="{{ config.key_hint or '未配置' }}"><button type="button" class="secondary" data-toggle-secret="#chatApiKey">显示</button></div></label>
+    <label>Chat 模型名称<input name="model" value="{{ config.model }}"></label>
+    <label>最终请求地址<input id="chatPreview" readonly value="{{ config.chat_url }}"></label>
+    <div class="actions"><button type="button" class="secondary" data-test-ai="chat">测试连接</button><button class="primary" type="submit" data-capability-submit="chat">保存</button></div>
+  </form>
+</section>
+<section class="panel form-stack" data-capability="embedding">
+  <h2>Embedding（实验性语义检索）</h2>
+  <form data-capability="embedding" data-form="embedding" id="embeddingForm" class="form-stack" action="/api/settings" method="post">
+    <label class="check"><input type="checkbox" name="embedding_enabled" {% if config.embedding_enabled %}checked{% endif %}>启用 Embedding</label>
+    <label>Embedding URL<input name="embedding_url" value="{{ config.embedding_url }}"></label>
+    <label>Embedding API Key<div class="secret-row"><input id="embeddingApiKey" name="embedding_api_key" type="password" value="" placeholder="{{ config.embedding_key_hint or '未配置' }}"><button type="button" class="secondary" data-toggle-secret="#embeddingApiKey">显示</button></div></label>
+    <label>Embedding 模型<input name="embedding_model" value="{{ config.embedding_model }}"></label>
+    <label>向量维度<input name="embedding_dimensions" type="number" value="{{ config.embedding_dimensions }}"></label>
+    <div class="actions"><button type="button" class="secondary" data-test-ai="embedding">测试 Embedding</button><button class="primary" type="submit" data-capability-submit="embedding">保存</button></div>
+  </form>
+</section>
+<section class="panel form-stack" data-capability="rerank">
+  <h2>Rerank（实验性语义检索）</h2>
+  <form data-capability="rerank" data-form="rerank" id="rerankForm" class="form-stack" action="/api/settings" method="post">
+    <label class="check"><input type="checkbox" name="rerank_enabled" {% if config.rerank_enabled %}checked{% endif %}>启用 Rerank</label>
+    <label>Rerank URL<input name="rerank_url" value="{{ config.rerank_url }}"></label>
+    <label>Rerank API Key<div class="secret-row"><input id="rerankApiKey" name="rerank_api_key" type="password" value="" placeholder="{{ config.rerank_key_hint or '未配置' }}"><button type="button" class="secondary" data-toggle-secret="#rerankApiKey">显示</button></div></label>
+    <label>Rerank 模型<input name="rerank_model" value="{{ config.rerank_model }}"></label>
+    <div class="actions"><button type="button" class="secondary" data-test-ai="rerank">测试 Rerank</button><button class="primary" type="submit" data-capability-submit="rerank">保存</button></div>
+  </form>
+</section>
+<section class="panel form-stack" data-capability="summary">
+  <h2>摘要模型（建议小模型）</h2>
+  <p class="muted">可接任意 OpenAI 兼容聊天模型；建议使用小模型以降低批量补齐成本。批量入口在首页右上角“生成摘要”。</p>
+  <form data-capability="summary" data-form="summary" id="summaryForm" class="form-stack" action="/api/settings/summary" method="post">
+    <label class="check"><input type="checkbox" name="summary_enabled" {% if config.summary_enabled %}checked{% endif %}>启用摘要模型</label>
+    <label>摘要 URL<input name="summary_url" value="{{ config.summary_url }}" placeholder="https://example.com/v1"></label>
+    <label>摘要 API Key<div class="secret-row"><input id="summaryApiKey" name="summary_api_key" type="password" value="" placeholder="{{ config.summary_key_hint or '未配置' }}"><button type="button" class="secondary" data-toggle-secret="#summaryApiKey">显示</button></div></label>
+    <label>摘要 模型<input name="summary_model" value="{{ config.summary_model }}" placeholder="gpt-4o-mini"></label>
+    <div class="actions"><button type="button" class="secondary" data-test-ai="summary">测试连接</button><button class="primary" type="submit" data-capability-submit="summary">保存</button></div>
+  </form>
+</section>
+{% endblock %}

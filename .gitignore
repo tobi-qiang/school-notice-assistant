@@ -1,0 +1,19 @@
+# Python build / test artefacts
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+
+# Local virtual environment
+.venv/
+
+# Runtime data, secrets, and DPAPI-encrypted material
+data/
+*.key
+jwc-session.bin
+*.bak
+*.log
+.coverage
+
+# Agent scratch space (never commit)
+.codex-scratch/

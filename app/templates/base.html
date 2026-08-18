@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}学校公告助手{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='sync-status.css') }}">
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="{{ url_for('index') }}">学校公告助手</a>
+    <nav>
+      <a href="{{ url_for('index') }}">公告</a>
+      <a href="{{ url_for('share_history') }}">分享历史</a>
+      <a href="{{ url_for('settings_page') }}">设置</a>
+      <button class="link danger" data-exit>退出程序</button>
+    </nav>
+  </header>
+  <main class="container">{% block content %}{% endblock %}</main>
+  <section id="exitScreen" class="exit-screen" hidden aria-live="assertive" aria-labelledby="exitTitle">
+    <div class="exit-card">
+      <span class="exit-mark" aria-hidden="true">✓</span>
+      <h1 id="exitTitle">正在退出程序</h1>
+      <p id="exitMessage">正在安全停止同步、关闭数据库和本地服务……</p>
+      <button id="closePageAgain" class="secondary" type="button" hidden>再次尝试关闭页面</button>
+    </div>
+  </section>
+  <div id="toast" class="toast" hidden></div>
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

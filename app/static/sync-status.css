@@ -1,0 +1,160 @@
+/* Sync panel layout: keep status row visible; hide sources/events lists
+   whenever the panel is not in the running state. */
+
+.status-panel { align-items: flex-start; }
+.status-content { min-width: 0; flex: 1; }
+.status-dot { margin-top: 10px; flex: 0 0 auto; }
+
+.status-panel[data-state="failed"] .status-dot,
+.status-panel[data-state="disconnected"] .status-dot {
+  background: var(--red);
+}
+
+/* Source state pills: only meaningful while a sync is running. */
+.status-panel:not([data-state="running"]) .sync-sources { display: none; }
+.status-panel:not([data-state="running"]) .sync-events { display: none; }
+
+.sync-meta {
+  color: var(--muted);
+  font-size: 13px;
+  margin: 4px 0 10px;
+}
+
+/* Sync sources (queued/running/completed/failed badges) ----------------- */
+
+.sync-sources {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+
+.sync-sources li {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  color: var(--muted);
+  font-size: 11px;
+  background: #fff;
+}
+
+.sync-sources li[data-state="running"] {
+  border-color: #d59a2b;
+  color: #9a6710;
+  background: #fff5dc;
+}
+.sync-sources li[data-state="completed"] {
+  border-color: var(--green-2);
+  color: var(--green);
+  background: var(--green-3);
+}
+.sync-sources li[data-state="failed"],
+.sync-sources li[data-state="cancelled"] {
+  border-color: #d8a3a3;
+  color: var(--red);
+}
+
+/* Sync events list ------------------------------------------------------ */
+
+.sync-events {
+  --row-height: 52px;
+  --row-gap: 7px;
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  position: relative;
+  overflow: hidden;
+  height: calc(3 * var(--row-height) + 2 * var(--row-gap));
+  max-width: 820px;
+}
+
+.sync-events li {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: var(--row-height);
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 9px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: #f4f6f1;
+  border: 1px solid var(--line);
+  transform: translateY(calc(var(--slot, 0) * (var(--row-height) + var(--row-gap))));
+  transition: transform 0.28s ease, opacity 0.28s ease;
+}
+
+.sync-events li.no-transition { transition: none; }
+.sync-events li.leaving { opacity: 0; }
+
+.sync-events .event-copy {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.sync-events .event-icon {
+  font-weight: 900;
+  color: var(--green);
+}
+
+.sync-events .fetching .event-icon { color: #b87813; }
+.sync-events .skipped .event-icon { color: var(--red); }
+
+.sync-events .event-title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+/* Second row: source name on the left, time on the right. */
+.sync-events .event-source {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.sync-events .event-source-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1 1 auto;
+}
+
+.sync-events .event-source-time {
+  flex: 0 0 auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  background: var(--panel-2, var(--green-3));
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 10.5px;
+}
+
+.sync-events .event-detail {
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Responsive ------------------------------------------------------------ */
+
+@media (max-width: 760px) {
+  .sync-events { --row-height: 72px; }
+  .sync-events li { grid-template-columns: auto minmax(0, 1fr); }
+  .sync-events .event-detail { grid-column: 2; white-space: normal; }
+  .sync-events .event-source { font-size: 11px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sync-events li { transition: none; }
+}

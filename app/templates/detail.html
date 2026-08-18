@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+{% block title %}{{ notice.short_title or notice.official_title }} · 学校公告助手{% endblock %}
+{% block content %}
+<article class="detail">
+  <p class="eyebrow">{{ notice.source_name }} · {{ notice.categories|join('、') }} · {{ notice.published_date }}</p>
+  <div class="detail-title-row"><h1>{{ notice.short_title or notice.official_title }}</h1><button type="button" class="secondary" id="generateShare" data-notice-id="{{ notice.id }}">生成分享</button></div>
+  {% if notice.short_title %}<p class="official">学校原标题：{{ notice.official_title }}</p>{% endif %}
+  {% if notice.date_conflict %}<div class="warning">页面发布时间与正文日期可能存在冲突，请核对学校原文。</div>{% endif %}
+  <section class="info-grid">
+    {% for label, value in notice.info_card %}{% if value %}<div><span>{{ label }}</span><p>{{ value }}</p></div>{% endif %}{% endfor %}
+  </section>
+  {% if notice.ai_uncertainty %}<div class="warning">{{ notice.ai_uncertainty }}</div>{% endif %}
+  <section class="panel"><h2>公告正文</h2>{% if notice.body_text %}<div class="notice-body">{{ notice.body_html|safe }}</div>{% else %}<p class="warning">学校页面没有可读取的文字正文，内容可能仅在图片或附件中，请查看学校原文。</p>{% endif %}</section>
+  {% if notice.attachments %}<section class="panel"><h2>附件名称</h2><ul>{% for name in notice.attachments %}<li>{{ name }}</li>{% endfor %}</ul><p class="muted">附件内容未下载，请进入学校原文查看。</p></section>{% endif %}
+  <div class="actions"><a class="primary button" href="{{ notice.original_url }}" target="_blank" rel="noopener noreferrer">查看学校原文</a><button class="secondary" data-copy="【{{ notice.short_title or notice.official_title }}】{{ notice.original_url }}">复制群分享内容</button></div>
+</article>
+<dialog id="singleShareDialog">
+  <form method="dialog" class="dialog-head"><h2>单篇分享</h2><button class="link">关闭</button></form>
+  <p id="singleShareStatus" class="share-generation-status" hidden></p>
+  <p id="singleShareWarning" class="warning" hidden></p>
+  <textarea id="singleShareText" rows="10" aria-label="单篇分享文本"></textarea>
+  <div class="dialog-actions"><button type="button" id="copySingleShare" class="primary" disabled>复制文本</button></div>
+</dialog>
+{% endblock %}

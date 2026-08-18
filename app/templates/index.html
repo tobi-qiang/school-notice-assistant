@@ -1,0 +1,114 @@
+{% extends "base.html" %}
+{% block content %}
+<header class="page-head compact">
+  <div class="head-title">
+    <h1>公告</h1>
+  </div>
+  <div class="actions">
+    <button id="syncButton" class="primary" type="button">同步公告</button>
+    <button id="stopButton" class="secondary" type="button" hidden>停止同步</button>
+    <button id="shareButton" class="secondary" type="button">生成群分享</button>
+    <button id="summaryButton" class="secondary" type="button">生成摘要</button>
+    <button id="stopSummaryButton" class="secondary" type="button" hidden>停止生成</button>
+  </div>
+</header>
+
+<section id="syncPanel" class="panel status-panel" data-state="{{ summary.sync_status }}">
+  <div class="status-content">
+    <div class="status-line">
+      <h2 class="status-title">同步状态</h2>
+      <span class="status-dot" aria-hidden="true"></span>
+    </div>
+    <p id="syncStatus" class="status-message">{{ summary.sync_message }}</p>
+    <p id="syncMeta" class="sync-meta" hidden></p>
+    <ul id="syncSources" class="sync-sources" hidden></ul>
+    <ol id="syncEvents" class="sync-events" aria-live="polite" hidden></ol>
+  </div>
+</section>
+
+<section id="summaryPanel" class="panel status-panel summary-panel" hidden data-state="idle">
+  <div class="status-content">
+    <div class="status-line">
+      <h2 class="status-title">摘要生成进度</h2>
+      <span class="status-dot" aria-hidden="true"></span>
+    </div>
+    <p id="summaryStatus" class="status-message">尚未生成</p>
+    <p id="summaryMeta" class="sync-meta" hidden></p>
+  </div>
+</section>
+
+<section class="panel notice-search-panel">
+  <form id="noticeSearch" class="notice-search" method="get" action="{{ url_for('index') }}">
+    <label class="search-field">
+      <span class="visually-hidden">搜索关键词</span>
+      <input id="searchInput" name="q" value="{{ filters.q|e }}" placeholder="搜索标题或正文" autocomplete="off" type="search">
+    </label>
+    <div class="source-select" id="sourceSelect">
+      <input id="sourceInput" type="hidden" name="source" value="{{ filters.source|e }}">
+      <button id="sourceSelectButton" class="source-select-button" type="button"
+              aria-haspopup="listbox" aria-expanded="false" aria-controls="sourceSelectMenu">
+        <span id="sourceSelectedLabel">{% if filters.source == 'future_notices' %}未来学院·通知{% elif filters.source == 'future_aid' %}未来学院·奖助{% elif filters.source == 'jwc_notices' %}教务处·通知{% else %}全部来源{% endif %}</span>
+        <span class="source-chevron" aria-hidden="true">⌄</span>
+      </button>
+      <div id="sourceSelectMenu" class="source-select-menu" role="listbox" aria-label="来源筛选" hidden>
+        <button type="button" class="source-option" role="option" data-source="" data-label="全部来源" aria-selected="{{ 'true' if not filters.source else 'false' }}">全部来源</button>
+      {% for src in sources %}
+        <button type="button" class="source-option" role="option" data-source="{{ src.key|e }}"
+              data-label="{% if src.key == 'future_notices' %}未来学院·通知{% elif src.key == 'future_aid' %}未来学院·奖助{% else %}教务处·通知{% endif %}"
+              aria-selected="{{ 'true' if filters.source == src.key else 'false' }}">
+          {% if src.key == 'future_notices' %}未来学院·通知{% elif src.key == 'future_aid' %}未来学院·奖助{% else %}教务处·通知{% endif %}
+        </button>
+      {% endfor %}
+      </div>
+    </div>
+    <label class="year-field">
+      <span class="visually-hidden">年份</span>
+      <input id="yearInput" name="year" value="{{ filters.year|e }}" inputmode="numeric" placeholder="年份" autocomplete="off">
+    </label>
+    <button class="primary search-submit" type="submit">搜索</button>
+  </form>
+</section>
+
+<section class="notice-list-wrap">
+  <ul id="noticeList" class="notice-list"
+      data-initial-count="{{ notices|length }}"
+      data-page-size="15"
+      data-q="{{ filters.q|e }}"
+      data-source="{{ filters.source|e }}"
+      data-year="{{ filters.year|e }}">
+    {% for notice in notices[:15] %}
+    <li class="notice-card" data-id="{{ notice.id }}">
+      <div class="meta">
+        <span class="meta-source">{{ notice.source_name|e }}</span>
+        <span class="meta-date">{{ notice.published_date|e }}</span>
+      </div>
+      <h2 class="notice-title"><a href="{{ url_for('notice_detail', notice_id=notice.id) }}">{{ (notice.short_title or notice.official_title)|e }}</a></h2>
+      {% if notice.preview %}
+      <p class="notice-preview{% if filters.q %} is-context{% endif %}">
+        {% if notice.preview_fragments %}{% for fragment in notice.preview_fragments %}{% if fragment.match %}<mark>{{ fragment.text|e }}</mark>{% else %}{{ fragment.text|e }}{% endif %}{% endfor %}{% else %}{{ notice.preview|e }}{% endif %}
+      </p>
+      {% elif notice.snippet %}<p class="notice-preview">{{ notice.snippet|e }}</p>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  <div id="noticeSentinel" class="notice-sentinel" aria-hidden="true"></div>
+  <button id="noticeLoadMore" class="notice-load-more" type="button" hidden>继续加载</button>
+  <p id="noticeEnd" class="notice-end" hidden>已加载全部公告</p>
+  <p id="noticeEmpty" class="notice-empty" {% if notices %}hidden{% endif %}>暂无匹配公告。首次使用请点击“同步公告”。</p>
+</section>
+
+<dialog id="shareDialog">
+  <form method="dialog" class="dialog-head"><div><p class="eyebrow">固定当前成功批次</p><h2>生成群分享</h2></div><button class="link" type="submit">关闭</button></form>
+  <div class="share-mode" role="tablist" aria-label="分享范围">
+    <button type="button" class="source-pill is-active" data-share-mode="new" role="tab" aria-selected="true">本次新增</button>
+    <button type="button" class="source-pill" data-share-mode="range" role="tab" aria-selected="false">日期区间</button>
+  </div>
+  <div id="shareDateRange" class="share-date-range" hidden>
+    <label>开始日期<input id="shareDateStart" type="date"></label>
+    <label>结束日期<input id="shareDateEnd" type="date"></label>
+  </div>
+  <div id="shareCandidates" class="candidate-list">正在读取候选……</div>
+  <textarea id="shareText" rows="8" aria-label="分享文本"></textarea>
+  <div class="dialog-actions"><button id="copyShare" class="secondary" type="button">复制文本</button><button id="completeShare" class="primary" type="button">本批处理完成</button></div>
+</dialog>
+{% endblock %}
