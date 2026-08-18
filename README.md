@@ -1,6 +1,21 @@
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+[![Python](https://img.shields.io/badge/Python-3.13-3776AB.svg?logo=python&logoColor=white)](pyproject.toml)
+[![CI](https://img.shields.io/badge/CI-pytest-44cc11.svg?logo=githubactions&logoColor=white)](.github/workflows/python-tests.yml)
+[![Tests](https://img.shields.io/badge/tests-300%20passed-44cc11.svg)](#%E6%B5%8B%E8%AF%95)
+
 # 学校公告助手
 
 仅在本机运行的苏州大学公告归档、搜索和群分享工具。更多实现细节见 [`AGENTS.md`](AGENTS.md) 与 [`GITHUB_UPLOAD_PLAN.md`](GITHUB_UPLOAD_PLAN.md)。
+
+## 功能
+
+- **三来源抓取**：未来科学与工程学院·通知公告 / 奖惩助贷、苏州大学教务处·通知公告（需登录）
+- **本地优先存储**：所有抓到的公告、AI 富化结果、群分享批次都落在 SQLite，可永久回看
+- **AI 富化（可选）**：标题精简、10 字段结构化摘要（受众/截止/操作/时间/材料/地点/联系方式/外部系统/不确定项/标签）
+- **混合搜索**：关键词默认开启，embedding 语义搜索与 rerank 重排可独立开启
+- **群分享**：单篇 10–20 字极简摘要 + 原文链接；按时间窗批量复制
+- **受控后台任务**：同步、AI 富化、搜索都可中断、可恢复；单实例锁避免重复启动
+- **凭据安全**：所有 API key 与教务处会话都用 Windows DPAPI 加密，机器外不可解
 
 ## 系统要求
 

@@ -1,0 +1,36 @@
+# Normalize line endings for text files. Keeps Python / Markdown / config LF
+# in the repository regardless of `core.autocrlf` on Windows, while
+# preserving CRLF for Windows-native scripts.
+
+*               text=auto whitespace=fix-trailing-cr
+
+# Source code and prose
+*.py            text eol=lf
+*.md            text eol=lf
+*.txt           text eol=lf
+*.yml           text eol=lf
+*.yaml          text eol=lf
+*.toml          text eol=lf
+*.json          text eol=lf
+*.html          text eol=lf
+*.css           text eol=lf
+*.js            text eol=lf
+
+# Windows-native scripts intentionally use CRLF
+*.bat           text eol=crlf
+*.vbs           text eol=crlf
+
+# Binary data - never touch
+*.png           binary
+*.jpg           binary
+*.jpeg          binary
+*.gif           binary
+*.ico           binary
+*.db            binary
+*.key           binary
+*.bin           binary
+*.woff          binary
+*.woff2         binary
+
+# Shell completion files
+.git*           export-ignore

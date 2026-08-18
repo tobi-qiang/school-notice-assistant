@@ -1,3 +1,5 @@
+> 状态：本计划是 **0.1.0 首次发布** 的执行记录，仓库已在 GitHub 上线（`tobi-qiang/school-notice-assistant`）。后续小版本不必照搬此流程；只在做大版本发布、跑 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/) 里的 Major/Minor 变更前再过一遍发布前检查与敏感审计即可。
+
 # GitHub 远端仓库上传计划
 
 ## 目标
