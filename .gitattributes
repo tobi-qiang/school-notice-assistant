@@ -33,4 +33,4 @@
 *.woff2         binary
 
 # Shell completion files
-.git*           export-ignore
+.git/           export-ignore
