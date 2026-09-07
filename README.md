@@ -1,7 +1,7 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB.svg?logo=python&logoColor=white)](pyproject.toml)
 [![CI](https://img.shields.io/badge/CI-pytest-44cc11.svg?logo=githubactions&logoColor=white)](.github/workflows/python-tests.yml)
-[![Tests](https://img.shields.io/badge/tests-300%20passed-44cc11.svg)](#%E6%B5%8B%E8%AF%95)
+[![Tests](https://img.shields.io/badge/tests-348%20passed-44cc11.svg)](#%E6%B5%8B%E8%AF%95)
 
 # 学校公告助手
 
@@ -58,6 +58,9 @@ py -3.13 -m venv .venv
 
 AI 配置完全可选。未配置或服务失效时，公告同步、原文阅读、关键词搜索和分享仍可使用。
 Embedding 与 Rerank 默认关闭。`summary_*` 是为单篇群分享生成 10–20 字摘要的小模型槽位。
+使用 MiniMax-M3 时，结构化富化、查询扩展和短摘要会关闭 thinking；基于公告的问答使用
+adaptive thinking，并通过 `reasoning_split` 只向页面返回最终答案。各任务有独立输出上限，
+达到上限的半截结果不会入库或显示为成功。
 
 ## 许可
 
@@ -84,12 +87,23 @@ Git 仓库，新用户首次启动时会自动创建。文件清单：
 `data/config.json`、`*.key` 通过 Web 界面的"设置"页面维护；`data/jwc-session.bin`
 通过"教务处登录"按钮走一次浏览器 CAS 登录后写入。
 
+登录窗口会先恢复已保存、未过期的苏大会话 Cookie；只有公告正文已加载，且同步所用的
+HTTP 请求也能读取正文时，才保存并报告验证成功。同步读取正文后会保存学校更新的 Cookie。
+“已保存登录态”只表示本机存在加密记录；设置页会区分尚未验证、访问验证成功、Cookie
+过期和学校要求重新认证。学校服务器仍可使会话失效，保存 Cookie 不等于永久免登录。
+
 ## 测试
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest -q
+node --test tests/frontend_exit.test.cjs
 ```
 
 测试使用离线 HTML 与假传输层，不调用学校网站或 AI 接口。运行产生的数据库、配置和日志都位于 `data/`，该目录不会提交到代码仓库。
 
 API Key 不写入 SQLite 或普通 JSON；Windows 上通过当前用户的 DPAPI 加密保存。点击"退出程序"会取消受控后台任务、关闭本地服务器和数据库并释放单实例锁，同时尝试关闭当前标签页；若浏览器安全策略拒绝自动关页，会显示可安全关闭的退出页面。直接关闭最后一个程序标签页也可以，后台会在短暂宽限后自动退出。
+
+退出页面会等待服务确认退出请求，再检查本地服务是否断开；失败或超时会显示“尚未确认
+退出”，可点击“重试退出”。退出时会关闭已接受的 HTTP 长连接，取消教务处登录窗口，
+并清理启动中途失败的资源。`data/app.lock` 文件可在退出后保留；是否正在运行取决于
+操作系统文件锁，不能通过文件是否存在判断。后台任务的退出等待有时间上限，超时会记入日志。

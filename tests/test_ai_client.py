@@ -83,7 +83,7 @@ class TestFakeTransport(unittest.TestCase):
         assert self.client.summarize_share('项目通知', '正文内容') == '本科生创新项目开始申报'
         request = self.mock_session.request.call_args
         assert request.kwargs['timeout'] == 20
-        assert request.kwargs['json']['max_tokens'] == 64
+        assert request.kwargs['json']['max_completion_tokens'] == 256
         assert request.kwargs['json']['response_format'] == {'type': 'json_object'}
         assert len(request.kwargs['json']['messages']) == 1
         assert request.args[1] == 'https://summary.example.com/v1/chat/completions'
@@ -102,6 +102,51 @@ class TestFakeTransport(unittest.TestCase):
         self.mock_session.request.return_value = fake_response
         assert self.client.summarize_share('标题', '正文') == '本科生第一学期选课安排'
         assert self.mock_session.request.call_count == 1
+
+    def test_share_summary_disables_minimax_m3_thinking(self):
+        self.config.summary_url = 'https://api.minimaxi.com'
+        self.config.summary_model = 'MiniMax-M3'
+        fake_response = Mock(status_code=200)
+        fake_response.json.return_value = {
+            'choices': [{'message': {'content': '{"summary":"本科生创新项目开始申报"}'}}]
+        }
+        self.mock_session.request.return_value = fake_response
+
+        assert self.client.summarize_share('标题', '正文') == '本科生创新项目开始申报'
+        payload = self.mock_session.request.call_args.kwargs['json']
+        assert payload['thinking'] == {'type': 'disabled'}
+        assert 'reasoning_split' not in payload
+        assert 'response_format' not in payload
+        assert payload['max_completion_tokens'] == 256
+
+    def test_summary_connection_disables_minimax_m3_thinking(self):
+        self.config.summary_url = 'https://api.minimaxi.com'
+        self.config.summary_model = 'MiniMax-M3'
+        self.mock_session.request.return_value = Mock(status_code=200)
+
+        assert self.client.test_connection('summary') == 'OK'
+        payload = self.mock_session.request.call_args.kwargs['json']
+        assert payload['thinking'] == {'type': 'disabled'}
+
+    def test_chat_connection_disables_minimax_m3_thinking(self):
+        self.config.base_url = 'https://api.minimaxi.com'
+        self.config.model = 'MiniMax-M3'
+        self.mock_session.request.return_value = Mock(status_code=200)
+
+        assert self.client.test_connection('chat') == 'OK'
+        payload = self.mock_session.request.call_args.kwargs['json']
+        assert payload['thinking'] == {'type': 'disabled'}
+        assert payload['max_completion_tokens'] == 16
+
+    def test_share_summary_rejects_truncated_thinking_only(self):
+        fake_response = Mock(status_code=200)
+        fake_response.json.return_value = {
+            'choices': [{'message': {'content': '<think>还在分析，输出额度已经结束'}}]
+        }
+        self.mock_session.request.return_value = fake_response
+
+        with self.assertRaisesRegex(InvalidAIResponse, '思考过程'):
+            self.client.summarize_share('标题', '正文')
     
     def test_embedding_fake_response(self):
         """Fake 嵌入响应。"""
@@ -174,6 +219,49 @@ class TestFakeTransport(unittest.TestCase):
             ['大创', '大学生创新创业训练计划', '创新训练'],
         )
 
+    def test_minimax_m3_enrichment_disables_thinking_and_parses_fenced_json(self):
+        self.config.base_url = 'https://api.minimaxi.com'
+        self.config.model = 'MiniMax-M3'
+        fake_response = Mock(status_code=200)
+        fake_response.json.return_value = {
+            'choices': [{
+                'finish_reason': 'stop',
+                'message': {'content': (
+                    '```json\n'
+                    '{"short_title":"大创申报","summary":"本科生创新项目申报",'
+                    '"audience":"本科生","materials":["申请表"],'
+                    '"tags":["创新创业"]}\n```'
+                )},
+            }]
+        }
+        self.mock_session.request.return_value = fake_response
+
+        result = self.client.enrich('项目通知', '正文')
+        assert result['short_title'] == '大创申报'
+        assert result['materials'] == ['申请表']
+        payload = self.mock_session.request.call_args.kwargs['json']
+        assert payload['thinking'] == {'type': 'disabled'}
+        assert payload['max_completion_tokens'] == 2048
+        assert 'reasoning_split' not in payload
+        assert 'response_format' not in payload
+
+    def test_minimax_m3_query_expansion_disables_thinking(self):
+        self.config.base_url = 'https://api.minimaxi.com'
+        self.config.model = 'MiniMax-M3'
+        fake_response = Mock(status_code=200)
+        fake_response.json.return_value = {
+            'choices': [{
+                'finish_reason': 'stop',
+                'message': {'content': '```json\n{"queries":["创新训练","大创项目"]}\n```'},
+            }]
+        }
+        self.mock_session.request.return_value = fake_response
+
+        assert self.client.expand_query('大创') == ['大创', '创新训练', '大创项目']
+        payload = self.mock_session.request.call_args.kwargs['json']
+        assert payload['thinking'] == {'type': 'disabled'}
+        assert payload['max_completion_tokens'] == 256
+
     def test_grounded_answer_uses_only_supplied_documents(self):
         fake_response = Mock()
         fake_response.status_code = 200
@@ -186,6 +274,43 @@ class TestFakeTransport(unittest.TestCase):
         payload = self.mock_session.request.call_args.kwargs['json']
         self.assertIn('不得使用模型记忆', payload['messages'][0]['content'])
         self.assertIn('六月截止', payload['messages'][1]['content'])
+
+    def test_minimax_m3_answer_separates_reasoning_and_returns_only_final_content(self):
+        self.config.base_url = 'https://api.minimaxi.com'
+        self.config.model = 'MiniMax-M3'
+        fake_response = Mock(status_code=200)
+        fake_response.json.return_value = {
+            'choices': [{
+                'finish_reason': 'stop',
+                'message': {
+                    'reasoning_content': '先核对公告依据。',
+                    'reasoning_details': [{'type': 'reasoning.text', 'text': '先核对公告依据。'}],
+                    'content': '根据公告，截止日期为六月。',
+                },
+            }]
+        }
+        self.mock_session.request.return_value = fake_response
+
+        result = self.client.answer('什么时候截止？', ['标题：申报通知\n正文摘录：六月截止'])
+        assert result == '根据公告，截止日期为六月。'
+        assert '先核对' not in result
+        payload = self.mock_session.request.call_args.kwargs['json']
+        assert payload['thinking'] == {'type': 'adaptive'}
+        assert payload['reasoning_split'] is True
+        assert payload['max_completion_tokens'] == 4096
+
+    def test_token_truncated_answer_is_rejected(self):
+        fake_response = Mock(status_code=200)
+        fake_response.json.return_value = {
+            'choices': [{
+                'finish_reason': 'length',
+                'message': {'content': '半截回答'},
+            }]
+        }
+        self.mock_session.request.return_value = fake_response
+
+        with self.assertRaisesRegex(InvalidAIResponse, 'token 上限'):
+            self.client.answer('什么时候截止？', ['公告依据'])
 
 
 class TestErrorClassification(unittest.TestCase):

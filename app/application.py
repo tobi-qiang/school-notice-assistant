@@ -163,6 +163,9 @@ class SyncCoordinator:
                         except AuthenticationRequired:
                             if source.key != "jwc_notices" or self.jwc_auth is None or auth_attempted:
                                 raise
+                            mark_rejected = getattr(self.jwc_auth, 'mark_rejected', None)
+                            if mark_rejected:
+                                mark_rejected()
                             auth_attempted = True
                             self.set_waiting_auth("请在弹出的苏大统一认证页面完成登录")
                             try:
@@ -187,6 +190,10 @@ class SyncCoordinator:
                                 self._progress["skipped_count"] += 1
                             self._finish_event(event_seq, "skipped", f"HTTP {exc.status_code}，已跳过")
                             continue
+                        if source.key == 'jwc_notices' and self.jwc_auth is not None:
+                            remember = getattr(self.jwc_auth, 'remember_session', None)
+                            if remember:
+                                remember(client._session)
                         if event.is_set():
                             return self._fail(run_id, "用户取消同步", True, f"{source.key}:{page}")
                         self.database.stage_notice(

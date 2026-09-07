@@ -124,6 +124,112 @@ def normalize_rerank_url(base_url: str, model: str) -> str:
     return ''
 
 
+def _is_minimax_m3(url: str, model: str) -> bool:
+    """Return whether this is MiniMax M3, whose thinking can be disabled."""
+    return (
+        ('minimax' in url.lower() or model.lower().startswith('minimax-'))
+        and model.strip().lower() == 'minimax-m3'
+    )
+
+
+def _chat_payload(
+    url: str,
+    model: str,
+    messages: list[dict[str, Any]],
+    *,
+    reasoning: bool,
+    max_completion_tokens: int,
+    json_object: bool = False,
+) -> dict[str, Any]:
+    """Build one Chat Completions payload with task-appropriate M3 controls."""
+    payload: dict[str, Any] = {
+        'model': model,
+        'messages': messages,
+        'max_completion_tokens': max_completion_tokens,
+    }
+    if _is_minimax_m3(url, model):
+        payload['thinking'] = {'type': 'adaptive' if reasoning else 'disabled'}
+        if reasoning:
+            # Keep private reasoning out of message.content.  Callers consume
+            # only the final content and never display or cache these fields.
+            payload['reasoning_split'] = True
+    elif json_object:
+        # Preserve structured-output support for other OpenAI-compatible
+        # providers. MiniMax M3 does not document this Chat parameter, so its
+        # JSON tasks rely on the prompt plus defensive parsing instead.
+        payload['response_format'] = {'type': 'json_object'}
+    return payload
+
+
+def _final_content(content: Any) -> str:
+    """Return final text without exposing an inline MiniMax thinking block."""
+    if not isinstance(content, str) or not content.strip():
+        return ''
+    candidate = content.strip()
+    candidate = re.sub(r'<think>[\s\S]*?</think>', '', candidate, flags=re.I).strip()
+    if candidate.lower().startswith('<think>'):
+        # The model reached a token or transport limit before final output.
+        return ''
+    return candidate
+
+
+def _json_object_result(content: Any) -> dict[str, Any] | None:
+    """Extract a JSON object from plain, fenced, or surrounding-text output."""
+    candidate = _final_content(content)
+    if not candidate:
+        return None
+    fenced = re.findall(r'```(?:json)?\s*([\s\S]*?)\s*```', candidate, flags=re.I)
+    attempts = [*reversed(fenced), candidate]
+    decoder = json_module.JSONDecoder()
+    for value in attempts:
+        value = str(value).strip()
+        try:
+            parsed = json_module.loads(value)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+        # A model may surround the object with one explanatory sentence. Raw
+        # decoding from each opening brace also handles nested arrays/objects.
+        for index, character in enumerate(value):
+            if character != '{':
+                continue
+            try:
+                parsed, _end = decoder.raw_decode(value[index:])
+            except Exception:
+                continue
+            if isinstance(parsed, dict):
+                return parsed
+    return None
+
+
+def _choice_message(data: Any) -> dict[str, Any]:
+    """Read the first completed choice and reject token-truncated output."""
+    try:
+        choice = data['choices'][0]
+        if str(choice.get('finish_reason') or '').lower() == 'length':
+            raise InvalidAIResponse('模型输出达到 token 上限，未产生完整最终答案')
+        message = choice['message']
+    except InvalidAIResponse:
+        raise
+    except Exception as exc:
+        raise InvalidAIResponse('回答响应格式无效') from exc
+    if not isinstance(message, dict):
+        raise InvalidAIResponse('回答响应格式无效')
+    return message
+
+
+def _summary_result(content: Any) -> str:
+    """Extract a summary from OpenAI-compatible plain/JSON/reasoning output."""
+    candidate = _final_content(content)
+    parsed = _json_object_result(candidate)
+    if parsed:
+        summary = str(parsed.get('summary') or '').strip()
+        if summary:
+            return summary
+    return re.sub(r'^(?:摘要|主题)\s*[：:]\s*', '', candidate).strip()
+
+
 class AIClient:
     """AI 客户端 - 支持聊天、嵌入、重排序。"""
     
@@ -227,11 +333,11 @@ class AIClient:
             if not (self.config.base_url and self.config.model and self.config.api_key):
                 raise AuthenticationError('Chat URL、Key 和模型必须完整配置')
             url = normalize_chat_url(self.config.base_url)
-            payload = {
-                'model': self.config.model or 'qwen3.5',
-                'messages': [{'role': 'user', 'content': 'ping'}],
-                'max_tokens': 1
-            }
+            payload = _chat_payload(
+                url, self.config.model,
+                [{'role': 'user', 'content': 'ping'}],
+                reasoning=False, max_completion_tokens=16,
+            )
         elif capability == 'embedding':
             if not (self.config.embedding_url and self.config.embedding_model and self.config.embedding_api_key):
                 raise AuthenticationError('Embedding URL、Key 和模型必须完整配置')
@@ -247,11 +353,11 @@ class AIClient:
             if not (self.config.summary_url and self.config.summary_model and self.config.summary_api_key):
                 raise AuthenticationError('摘要模型 URL、Key 和模型必须完整配置')
             url = normalize_chat_url(self.config.summary_url)
-            payload = {
-                'model': self.config.summary_model,
-                'messages': [{'role': 'user', 'content': 'ping'}],
-                'max_tokens': 1,
-            }
+            payload = _chat_payload(
+                url, self.config.summary_model,
+                [{'role': 'user', 'content': 'ping'}],
+                reasoning=False, max_completion_tokens=16,
+            )
         else:
             raise AIError('未知能力')
         try:
@@ -297,11 +403,11 @@ class AIClient:
 只返回 JSON，不要其他内容。'''
         
         url = normalize_chat_url(self.config.base_url)
-        payload = {
-            'model': self.config.model or 'qwen3.5',
-            'messages': [{'role': 'user', 'content': prompt}],
-            'response_format': {'type': 'json_object'}
-        }
+        payload = _chat_payload(
+            url, self.config.model,
+            [{'role': 'user', 'content': prompt}],
+            reasoning=False, max_completion_tokens=2048, json_object=True,
+        )
         
         retries = 0
         last_error = None
@@ -310,15 +416,16 @@ class AIClient:
             try:
                 response = self._request('POST', url, json=payload, timeout=30)
                 if response.status_code == 200:
-                    data = response.json()
-                    content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
-                    self._record_success('chat')
-                    
                     try:
-                        result = json_module.loads(content)
-                    except Exception:
-                        result = {}
-                    
+                        message = _choice_message(response.json())
+                        result = _json_object_result(message.get('content', ''))
+                    except InvalidAIResponse:
+                        self._record_failure('chat')
+                        raise
+                    if not result:
+                        self._record_failure('chat')
+                        raise InvalidAIResponse('公告富化未返回有效 JSON')
+                    self._record_success('chat')
                     return {
                         'short_title': result.get('short_title', title[:50]),
                         'summary': result.get('summary', ''),
@@ -360,22 +467,22 @@ class AIClient:
         prompt = f'请为以下查询生成 3 个相关变体，返回 JSON 对象，格式为 {{"queries":["..."]}}：{query}'
         
         url = normalize_chat_url(self.config.base_url)
-        payload = {
-            'model': self.config.model or 'qwen3.5',
-            'messages': [{'role': 'user', 'content': prompt}],
-            'response_format': {'type': 'json_object'}
-        }
+        payload = _chat_payload(
+            url, self.config.model,
+            [{'role': 'user', 'content': prompt}],
+            reasoning=False, max_completion_tokens=256, json_object=True,
+        )
         
         try:
             response = self._request('POST', url, json=payload, timeout=15)
             if response.status_code == 200:
-                data = response.json()
-                content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
                 try:
-                    result = json_module.loads(content)
+                    message = _choice_message(response.json())
+                    result = _json_object_result(message.get('content', ''))
                     values = result.get('queries', []) if isinstance(result, dict) else result
                     if isinstance(values, list):
                         expanded = [str(x).strip() for x in values if str(x).strip()]
+                        self._record_success('chat')
                         return [query, *expanded]
                 except Exception:
                     pass
@@ -393,24 +500,27 @@ class AIClient:
         if not documents:
             raise InvalidAIResponse('没有可用于回答的公告依据')
         context = '\n\n---\n\n'.join(filter_sensitive_text(item) for item in documents)
-        payload = {
-            'model': self.config.model,
-            'messages': [
+        url = normalize_chat_url(self.config.base_url)
+        payload = _chat_payload(
+            url, self.config.model,
+            [
                 {'role': 'system', 'content': (
                     '你只能根据用户提供的学校公告摘录回答。不得使用模型记忆补充学校事实；'
                     '依据不足时明确说未找到。附件内容未提供时必须提示查看原文附件。'
                 )},
                 {'role': 'user', 'content': f'问题：{filter_sensitive_text(question)}\n\n公告依据：\n{context}'},
             ],
-        }
-        response = self._request('POST', normalize_chat_url(self.config.base_url), json=payload, timeout=30)
+            reasoning=True, max_completion_tokens=4096,
+        )
+        response = self._request('POST', url, json=payload, timeout=30)
         if response.status_code != 200:
             self._handle_error(response, 'chat')
         try:
-            content = response.json()['choices'][0]['message']['content']
-        except Exception as exc:
+            message = _choice_message(response.json())
+            content = _final_content(message.get('content', ''))
+        except InvalidAIResponse:
             self._record_failure('chat')
-            raise InvalidAIResponse('回答响应格式无效') from exc
+            raise
         if not isinstance(content, str) or not content.strip():
             self._record_failure('chat')
             raise InvalidAIResponse('回答内容为空')
@@ -420,11 +530,11 @@ class AIClient:
     def summarize_share(self, title: str, body: str) -> str:
         """Produce a concise, topic-only share summary for one notice.
 
-        Distinct from :meth:`enrich`: a single Chat call, 20 second timeout,
-        no automatic retries, ``max_tokens`` is small (64) and the payload
-        forces ``response_format=json_object`` with a single ``summary``
-        field.  Any parse failure or empty value raises :class:`AIError`
-        so the caller can fall back to a cached value or local snippet.
+        Distinct from :meth:`enrich`: a single Chat call, 20 second timeout and
+        no automatic retries.  MiniMax M3 thinking is disabled for this simple
+        extraction task. Any parse failure or empty value raises
+        :class:`AIError` so the caller can fall back to a cached value or local
+        title; it never retries with a different model.
         """
         self._check_circuit('summary')
 
@@ -447,48 +557,25 @@ class AIClient:
         )
 
         url = normalize_chat_url(self.config.summary_url)
-        payload = {
-            'model': self.config.summary_model,
-            'messages': [{'role': 'user', 'content': prompt}],
-            'response_format': {'type': 'json_object'},
-            'max_tokens': 64,
-        }
+        payload = _chat_payload(
+            url, self.config.summary_model,
+            [{'role': 'user', 'content': prompt}],
+            reasoning=False, max_completion_tokens=256, json_object=True,
+        )
 
         response = self._request('POST', url, capability='summary', json=payload, timeout=20)
         if response.status_code != 200:
             self._handle_error(response, 'summary')
         try:
-            data = response.json()
-            content = data.get('choices', [{}])[0].get('message', {}).get('content', '')
-        except Exception as exc:
+            message = _choice_message(response.json())
+            content = message.get('content', '')
+        except InvalidAIResponse:
             self._record_failure('summary')
-            raise InvalidAIResponse('share summary response unreadable') from exc
-        result: Any = {}
-        if content:
-            candidate = str(content).strip()
-            candidate = re.sub(r'^```(?:json)?\s*|\s*```$', '', candidate, flags=re.I)
-            try:
-                result = json_module.loads(candidate)
-            except Exception:
-                # Small models sometimes ignore response_format and return the
-                # requested one-line summary directly.  It is still validated
-                # by EnrichmentQueue before anything is cached.
-                match = re.search(r'\{[\s\S]*\}', candidate)
-                if match:
-                    try:
-                        result = json_module.loads(match.group(0))
-                    except Exception:
-                        result = candidate
-                else:
-                    result = candidate
-        summary = ''
-        if isinstance(result, dict):
-            summary = str(result.get('summary') or '').strip()
-        elif isinstance(result, str):
-            summary = result.strip()
+            raise
+        summary = _summary_result(content)
         if not summary:
             self._record_failure('summary')
-            raise InvalidAIResponse('share summary empty')
+            raise InvalidAIResponse('模型只返回了思考过程或空内容；请重试或换用非思考模型')
         self._record_success('summary')
         return summary
 

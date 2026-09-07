@@ -50,9 +50,10 @@ class Store:
 
 
 class Heartbeat:
-    def __init__(self): self.beats = []; self.disconnected = []
+    def __init__(self): self.beats = []; self.disconnected = []; self.suspended = []
     def heartbeat(self, identity): self.beats.append(identity)
     def disconnect(self, identity): self.disconnected.append(identity)
+    def suspend(self, identity): self.suspended.append(identity)
 
 
 class Lifecycle:
@@ -213,6 +214,8 @@ def test_heartbeat_disconnect_and_explicit_exit_are_distinct():
     assert beat.status_code == 200 and lifecycle.heartbeat.beats == ["tab-1"]
     client.post("/api/disconnect", headers={"X-Client-ID": "tab-1"})
     assert lifecycle.heartbeat.disconnected == ["tab-1"] and lifecycle.exiting is False
+    client.post("/api/suspend?client_id=tab-2")
+    assert lifecycle.heartbeat.suspended == ["tab-2"]
     response = client.post("/api/exit")
     assert lifecycle.exiting is False
     response.close()
@@ -224,3 +227,26 @@ def test_history_routes_and_unknown_api():
     assert client.get("/history").status_code == 200
     assert client.get("/api/share-history").get_json() == []
     assert client.get("/api/no-such-route").status_code == 404
+
+
+def test_health_does_not_register_a_page_or_read_database():
+    client, db, _, _, lifecycle = setup()
+    response = client.get('/api/health')
+    assert response.status_code == 200
+    assert response.get_json()['app'] == 'school-notice-assistant'
+    assert response.headers['Cache-Control'] == 'no-store'
+    assert db.filters is None
+    assert lifecycle.heartbeat.beats == []
+
+
+def test_auth_status_distinguishes_saved_from_verified(tmp_path):
+    from app.jwc_auth import JWCAuthManager
+    manager = JWCAuthManager(tmp_path / 'session.bin', protector=lambda b: b[::-1],
+                             unprotector=lambda b: b[::-1])
+    manager._save_state([dict(name='session', value='private', domain='jwc.suda.edu.cn', path='/')])
+    app = create_app(DB(), Coordinator(), Store(), jwc_auth=manager)
+    client = app.test_client()
+    auth = client.get('/api/jwc-auth').get_json()
+    assert auth['configured'] and auth['validation'] == 'unverified'
+    assert '尚未验证当前是否有效' in client.get('/settings').get_data(as_text=True)
+    assert 'private' not in client.get('/api/jwc-auth').get_data(as_text=True)

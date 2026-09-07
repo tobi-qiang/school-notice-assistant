@@ -26,17 +26,26 @@ const showExitScreen = (finished = false) => {
   const title = document.querySelector('#exitTitle');
   const message = document.querySelector('#exitMessage');
   const retry = document.querySelector('#closePageAgain');
+  const retryExit = document.querySelector('#retryExit');
   if (screen) screen.hidden = false;
   document.body.classList.add('is-exiting');
-  if (!finished) return;
-  if (title) title.textContent = '程序已退出';
-  if (message) {
-    message.textContent = '浏览器没有允许网页自动关闭这个标签页。现在可以直接点击标签页的 ×，不会留下后台进程。';
-  }
-  if (retry) retry.hidden = false;
+  if (retryExit) retryExit.hidden = true;
+  if (title) title.textContent = finished ? '本地服务已断开' : '正在退出程序';
+  if (message) message.textContent = finished
+    ? '退出请求已接收，本地服务已停止响应。可以关闭这个标签页。'
+    : '正在请求停止同步、关闭数据库和本地服务……';
+  if (retry) retry.hidden = !finished;
 };
 
-const requestProgramExit = () => {
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 3000) => {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal, cache: 'no-store' });
+  } finally { clearTimeout(timer); }
+};
+
+const requestProgramExit = async () => {
   if (appExiting) return;
   appExiting = true;
   if (syncPollTimer) clearTimeout(syncPollTimer);
@@ -44,20 +53,41 @@ const requestProgramExit = () => {
   if (typeof abortInflight === 'function') abortInflight();
   document.querySelector('[data-exit]')?.setAttribute('disabled', '');
   showExitScreen(false);
-
-  const body = new Blob([], { type: 'application/json' });
-  const queued = typeof navigator.sendBeacon === 'function'
-    ? navigator.sendBeacon('/api/exit', body)
-    : false;
-  if (!queued) {
-    fetch('/api/exit', { method: 'POST', keepalive: true }).catch(() => {});
+  try {
+    const response = await fetchWithTimeout('/api/exit', { method: 'POST', keepalive: true }, 10000);
+    const result = await response.json();
+    if (!response.ok || result.status !== 'shutting_down') throw new Error('退出请求未被确认');
+    // A queued beacon and a fixed delay cannot confirm that shutdown happened.
+    let disconnected = 0;
+    const deadline = Date.now() + 30000;
+    while (Date.now() < deadline) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      try {
+        await fetchWithTimeout('/api/health');
+        disconnected = 0;
+      } catch (_error) { disconnected += 1; }
+      if (disconnected >= 2) {
+        showExitScreen(true);
+        window.close();
+        return;
+      }
+    }
+    throw new Error('服务仍在响应，尚未确认退出，请重试');
+  } catch (error) {
+    appExiting = false;
+    document.querySelector('[data-exit]')?.removeAttribute('disabled');
+    const title = document.querySelector('#exitTitle');
+    const message = document.querySelector('#exitMessage');
+    if (title) title.textContent = '尚未确认退出';
+    if (message) message.textContent = `${error.message}。请重试退出；如果持续失败，请重新启动助手。`;
+    const retryExit = document.querySelector('#retryExit');
+    if (retryExit) retryExit.hidden = false;
+    heartbeatTimer = setInterval(sendHeartbeat, 5000);
+    sendHeartbeat();
+    if (typeof pollStatus === 'function') pollStatus();
   }
-
-  // Browsers only allow window.close() for script-closeable tabs.  Try it
-  // while the user gesture is still active, then leave a clear terminal page.
-  window.close();
-  setTimeout(() => showExitScreen(true), 450);
 };
+document.querySelector('#retryExit')?.addEventListener('click', requestProgramExit);
 
 // Global delegated handlers ------------------------------------------------
 
@@ -301,6 +331,10 @@ const pollStatus = async () => {
   if (appExiting) return;
   try {
     const status = await jsonFetch('/api/status');
+    const authLabel = document.querySelector('#jwcAuthStatus');
+    if (authLabel && status.jwc_auth?.message && !document.querySelector('#jwcLogin')?.disabled) {
+      authLabel.textContent = status.jwc_auth.message;
+    }
     const wasRunning = lastSyncRunning === true;
     showSync(Boolean(status.running), status.message || '尚未同步', status.status || 'idle');
     renderProgress(status.progress || {});
@@ -1084,17 +1118,18 @@ copySingleShare?.addEventListener('click', async () => {
 // JWC auth ----------------------------------------------------------------
 
 document.querySelector('#jwcLogin')?.addEventListener('click', async (event) => {
-  event.currentTarget.disabled = true;
+  const button = event.currentTarget;
+  button.disabled = true;
   const status = document.querySelector('#jwcAuthStatus');
   if (status) status.textContent = '请在弹出的苏大官方页面完成登录……';
   try {
-    await jsonFetch('/api/jwc-auth/login', { method: 'POST' });
-    if (status) status.textContent = '已保存登录态';
-    toast('教务处登录成功');
+    const result = await jsonFetch('/api/jwc-auth/login', { method: 'POST' });
+    if (status) status.textContent = result.auth?.message || '已保存登录态，尚未验证当前是否有效';
+    toast(result.auth?.validation === 'valid' ? '教务处登录态验证成功' : '登录态已保存');
   } catch (error) {
     if (status) status.textContent = error.message;
     toast(error.message);
-  } finally { event.currentTarget.disabled = false; }
+  } finally { button.disabled = false; }
 });
 
 document.querySelector('#jwcClear')?.addEventListener('click', async () => {
@@ -1106,11 +1141,34 @@ document.querySelector('#jwcClear')?.addEventListener('click', async () => {
 
 // Heartbeat & disconnect --------------------------------------------------
 
-heartbeatTimer = setInterval(() => {
-  if (!appExiting) fetch('/api/heartbeat', { method: 'POST', keepalive: true }).catch(() => {});
-}, 5000);
-fetch('/api/heartbeat', { method: 'POST', keepalive: true }).catch(() => {});
-window.addEventListener('pagehide', () => {
-  if (!appExiting) navigator.sendBeacon('/api/disconnect');
-});
+const heartbeatClientId = globalThis.crypto?.randomUUID?.()
+  || `page-${Date.now()}-${Math.random().toString(16).slice(2)}`;
 
+const sendHeartbeat = () => {
+  if (appExiting) return;
+  fetch('/api/heartbeat', {
+    method: 'POST', keepalive: true,
+    headers: { 'X-Client-ID': heartbeatClientId },
+  }).catch(() => {});
+};
+
+const sendLifecycleSignal = (path) => {
+  if (appExiting) return;
+  const url = `${path}?client_id=${encodeURIComponent(heartbeatClientId)}`;
+  const queued = typeof navigator.sendBeacon === 'function' && navigator.sendBeacon(url);
+  if (!queued) fetch(url, { method: 'POST', keepalive: true }).catch(() => {});
+};
+
+heartbeatTimer = setInterval(sendHeartbeat, 5000);
+sendHeartbeat();
+// 后台标签页的定时器会被浏览器降频（甚至冻结），回到前台或从后退缓存恢复时必须
+// 立刻补一次心跳，否则本地服务会以为页面已经关掉。
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') sendHeartbeat();
+});
+window.addEventListener('pageshow', sendHeartbeat);
+document.addEventListener('resume', sendHeartbeat);
+document.addEventListener('freeze', () => sendLifecycleSignal('/api/suspend'));
+window.addEventListener('pagehide', (event) => {
+  sendLifecycleSignal(event.persisted ? '/api/suspend' : '/api/disconnect');
+});

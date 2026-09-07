@@ -195,6 +195,13 @@ class TestInteractionFeatures(unittest.TestCase):
         self.assertIn("/api/heartbeat", js)
         self.assertIn("pagehide", js)
         self.assertIn("sendBeacon", js)
+        # 后台标签页的定时器会被降频/冻结，回到前台时要立刻补心跳
+        self.assertIn("visibilitychange", js)
+        self.assertIn("pageshow", js)
+        self.assertNotIn("sessionStorage", js)
+        self.assertIn("X-Client-ID", js)
+        self.assertIn("/api/suspend", js)
+        self.assertIn("event.persisted", js)
 
     def test_custom_source_select_accessibility_and_immediate_filter(self):
         js = read_text(STATIC / "app.js")
@@ -234,7 +241,7 @@ class TestInteractionFeatures(unittest.TestCase):
         js = read_text(STATIC / "app.js")
         html = read_text(TEMPLATES / "base.html")
         self.assertIn("requestProgramExit", js)
-        self.assertIn("navigator.sendBeacon('/api/exit'", js)
+        self.assertIn("fetchWithTimeout('/api/exit'", js)
         self.assertIn("clearTimeout(syncPollTimer)", js)
         self.assertIn("clearInterval(heartbeatTimer)", js)
         self.assertIn("window.close()", js)

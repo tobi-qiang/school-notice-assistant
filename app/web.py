@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from dataclasses import asdict
 from datetime import date
+import os
 from uuid import uuid4
 
 from flask import Flask, jsonify, make_response, render_template, request
@@ -28,8 +29,22 @@ def create_app(
     app = Flask(__name__)
     heartbeat = getattr(lifecycle, "heartbeat", lifecycle)
 
+    @app.get('/api/health')
+    def health():
+        response = jsonify(status='ok', app='school-notice-assistant', pid=os.getpid())
+        response.headers['Cache-Control'] = 'no-store'
+        return response
+
     def client_id() -> str:
-        return request.headers.get("X-Client-ID") or request.cookies.get("client_id") or uuid4().hex
+        payload = request.get_json(silent=True) if request.is_json else None
+        supplied = (
+            request.headers.get("X-Client-ID")
+            or request.args.get("client_id")
+            or (payload.get("client_id") if isinstance(payload, dict) else None)
+            or request.form.get("client_id")
+            or request.cookies.get("client_id")
+        )
+        return str(supplied).strip()[:128] if supplied else uuid4().hex
 
     @app.get("/")
     def index():
@@ -151,7 +166,8 @@ def create_app(
             if status == "ready":
                 status = "cached" if cached or origin == "existing" else "generated"
             if status in {"disabled", "failed", "missing"}:
-                warning = "摘要模型暂不可用，已使用原公告标题；你可以直接修改后复制。"
+                detail = str(result.get("message") or "摘要模型暂不可用").strip()[:200]
+                warning = f"摘要生成失败：{detail}；已使用原公告标题，你可以直接修改后复制。"
                 status = "fallback" if status == "disabled" else "unavailable"
         elif not cached:
             warning = "未配置摘要模型，已使用原公告标题；你可以直接修改后复制。"
@@ -499,6 +515,12 @@ def create_app(
         if heartbeat is not None:
             heartbeat.disconnect(client_id())
         return jsonify(status="disconnected")
+
+    @app.post("/api/suspend")
+    def suspend():
+        if heartbeat is not None:
+            heartbeat.suspend(client_id())
+        return jsonify(status="suspended")
 
     @app.post("/api/exit")
     def exit_program():
