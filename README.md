@@ -7,6 +7,10 @@
 
 仅在本机运行的苏州大学公告归档、搜索和群分享工具。更多实现细节见 [`AGENTS.md`](AGENTS.md) 与 [`GITHUB_UPLOAD_PLAN.md`](GITHUB_UPLOAD_PLAN.md)。
 
+当前版本 **v0.1.1**：修复退出资源清理、教务处登录态复用和 MiniMax-M3 响应处理。
+下载见 [GitHub Releases](https://github.com/tobi-qiang/school-notice-assistant/releases)，
+完整变更和验证范围见 [`CHANGELOG.md`](CHANGELOG.md)。
+
 ## 功能
 
 - **三来源抓取**：未来科学与工程学院·通知公告 / 奖惩助贷、苏州大学教务处·通知公告（需登录）
@@ -45,6 +49,15 @@
 py -3.13 -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -e ".[dev]"
 ```
+
+## 从旧版本更新
+
+先退出正在运行的助手，并备份原目录中的 `data/`。使用 Git 安装时，在原项目目录执行
+`git pull --ff-only`，然后重新运行 `install.bat`。使用 Release 源码 ZIP 安装时，将新版本
+解压到新目录，复制原来的 `data/` 到新目录，再运行 `install.bat`。
+
+在同一台 Windows 电脑、同一用户下保留完整 `data/`，可继续使用已有公告和配置；
+学校登录态仍以学校当前是否接受该会话为准。`data/` 含本机凭据，不要上传到仓库。
 
 ## 启动
 
@@ -99,7 +112,8 @@ HTTP 请求也能读取正文时，才保存并报告验证成功。同步读取
 node --test tests/frontend_exit.test.cjs
 ```
 
-测试使用离线 HTML 与假传输层，不调用学校网站或 AI 接口。运行产生的数据库、配置和日志都位于 `data/`，该目录不会提交到代码仓库。
+测试使用离线 HTML、假传输层和独立临时目录，不调用学校网站或 AI 接口。
+前端交互测试需要 Node.js，仅测试开发需要，运行助手不依赖 Node.js。
 
 API Key 不写入 SQLite 或普通 JSON；Windows 上通过当前用户的 DPAPI 加密保存。点击"退出程序"会取消受控后台任务、关闭本地服务器和数据库并释放单实例锁，同时尝试关闭当前标签页；若浏览器安全策略拒绝自动关页，会显示可安全关闭的退出页面。直接关闭最后一个程序标签页也可以，后台会在短暂宽限后自动退出。
 

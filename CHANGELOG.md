@@ -3,7 +3,7 @@
 本项目的所有显著变更都会记录在此文件。格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
-## [未发布]
+## [0.1.1] - 2026-09-07
 
 ### 修复
 
@@ -26,6 +26,13 @@
   问答保留 adaptive thinking，但使用 `reasoning_split` 只消费最终答案。所有 Chat 路径按
   任务设置 `max_completion_tokens`，拒绝 `finish_reason=length` 的半截输出；JSON 解析支持
   代码块和前后附加文本，并在界面显示脱敏后的具体失败原因。
+
+### 验证
+
+- 本地 348 项 Python 测试、4 项前端交互测试通过，修复提交通过 GitHub Actions。
+- 退出测试使用真实本机服务器，检查长连接、工作线程、数据库、端口和单实例锁的释放。
+- 登录态恢复通过离线回归测试；真实学校登录窗口的完整复用流程尚未完成验证。
+  学校仍可使会话失效，本版本不承诺永久免登录。
 
 ## [0.1.0] - 2026-08-18
 
