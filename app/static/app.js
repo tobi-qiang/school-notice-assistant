@@ -321,6 +321,9 @@ const renderSummaryJob = (job = {}) => {
   }
 };
 
+// Jitter so several open tabs do not poll the local server in lock-step.
+const pollJitter = (base) => Math.round(base * (0.8 + Math.random() * 0.4));
+
 const scheduleStatusPoll = (delay) => {
   if (appExiting) return;
   if (syncPollTimer) clearTimeout(syncPollTimer);
@@ -331,10 +334,6 @@ const pollStatus = async () => {
   if (appExiting) return;
   try {
     const status = await jsonFetch('/api/status');
-    const authLabel = document.querySelector('#jwcAuthStatus');
-    if (authLabel && status.jwc_auth?.message && !document.querySelector('#jwcLogin')?.disabled) {
-      authLabel.textContent = status.jwc_auth.message;
-    }
     const wasRunning = lastSyncRunning === true;
     showSync(Boolean(status.running), status.message || '尚未同步', status.status || 'idle');
     renderProgress(status.progress || {});
@@ -345,13 +344,13 @@ const pollStatus = async () => {
       location.reload();
       return;
     }
-    scheduleStatusPoll(status.running || status.summary_job?.running ? 1000 : 3000);
+    scheduleStatusPoll(pollJitter(status.running || status.summary_job?.running ? 1000 : 3000));
   } catch (_error) {
     if (appExiting) return;
     lastSyncRunning = false;
     showSync(false, '本地服务已断开', 'disconnected');
     setSummaryRunning(false);
-    scheduleStatusPoll(3000);
+    scheduleStatusPoll(pollJitter(3000));
   }
 };
 
@@ -364,7 +363,7 @@ if (syncButton) syncButton.addEventListener('click', async () => {
     pollStatus();
   } catch (error) {
     showSync(false, error.message, 'failed');
-    scheduleStatusPoll(3000);
+    scheduleStatusPoll(pollJitter(3000));
   }
 });
 
@@ -1113,30 +1112,6 @@ document.querySelector('#generateShare')?.addEventListener('click', async (event
 copySingleShare?.addEventListener('click', async () => {
   await navigator.clipboard.writeText(singleShareText.value);
   toast('单篇分享内容已复制');
-});
-
-// JWC auth ----------------------------------------------------------------
-
-document.querySelector('#jwcLogin')?.addEventListener('click', async (event) => {
-  const button = event.currentTarget;
-  button.disabled = true;
-  const status = document.querySelector('#jwcAuthStatus');
-  if (status) status.textContent = '请在弹出的苏大官方页面完成登录……';
-  try {
-    const result = await jsonFetch('/api/jwc-auth/login', { method: 'POST' });
-    if (status) status.textContent = result.auth?.message || '已保存登录态，尚未验证当前是否有效';
-    toast(result.auth?.validation === 'valid' ? '教务处登录态验证成功' : '登录态已保存');
-  } catch (error) {
-    if (status) status.textContent = error.message;
-    toast(error.message);
-  } finally { button.disabled = false; }
-});
-
-document.querySelector('#jwcClear')?.addEventListener('click', async () => {
-  await jsonFetch('/api/jwc-auth/clear', { method: 'POST' });
-  const status = document.querySelector('#jwcAuthStatus');
-  if (status) status.textContent = '尚未登录';
-  toast('已清除教务处登录态');
 });
 
 // Heartbeat & disconnect --------------------------------------------------

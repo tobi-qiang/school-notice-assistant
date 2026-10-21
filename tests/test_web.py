@@ -237,16 +237,3 @@ def test_health_does_not_register_a_page_or_read_database():
     assert response.headers['Cache-Control'] == 'no-store'
     assert db.filters is None
     assert lifecycle.heartbeat.beats == []
-
-
-def test_auth_status_distinguishes_saved_from_verified(tmp_path):
-    from app.jwc_auth import JWCAuthManager
-    manager = JWCAuthManager(tmp_path / 'session.bin', protector=lambda b: b[::-1],
-                             unprotector=lambda b: b[::-1])
-    manager._save_state([dict(name='session', value='private', domain='jwc.suda.edu.cn', path='/')])
-    app = create_app(DB(), Coordinator(), Store(), jwc_auth=manager)
-    client = app.test_client()
-    auth = client.get('/api/jwc-auth').get_json()
-    assert auth['configured'] and auth['validation'] == 'unverified'
-    assert '尚未验证当前是否有效' in client.get('/settings').get_data(as_text=True)
-    assert 'private' not in client.get('/api/jwc-auth').get_data(as_text=True)

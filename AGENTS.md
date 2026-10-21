@@ -8,3 +8,5 @@
 - Network and AI failures must degrade safely and must not corrupt committed notice data.
 - Tests must not call live school or AI endpoints; use fixtures and fake transports.
 - Never log API keys or full sensitive notice bodies.
+- Run the narrow relevant tests while iterating; before completion run the Python suite and, when frontend/lifecycle behavior changes, `node --test tests/frontend_exit.test.cjs`.
+- Keep `data/`, `.venv/`, `.codex-scratch/`, API keys, and session files out of commits; do not weaken DPAPI or single-instance protections for convenience.

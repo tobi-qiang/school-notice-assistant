@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "school-notice-assistant"
-version = "0.1.1"
-description = "Local-first school notice archive, search, and sharing assistant"
+version = "0.2.0"
+description = "Local-first notice archive, search, and sharing assistant for the School of Future Science and Engineering at Soochow University"
 requires-python = ">=3.13"
 dependencies = [
   "beautifulsoup4>=4.12,<5",

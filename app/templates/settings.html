@@ -2,12 +2,6 @@
 {% block title %}设置 · 学校公告助手{% endblock %}
 {% block content %}
 <section class="page-head"><p class="eyebrow">本机配置</p><h1>AI 与语义检索</h1><p>所有功能均可留空；公告同步、关键词搜索和原文阅读不依赖 AI。</p></section>
-<section class="panel form-stack">
-  <h2>教务处统一认证</h2>
-  <p class="muted">账号密码只在苏大官方登录页输入；本程序仅加密保存登录后的会话。</p>
-  <p id="jwcAuthStatus">{{ jwc_auth.message or ('已保存登录态，尚未验证当前是否有效' if jwc_auth.configured else '尚未登录') }}</p>
-  <div class="actions"><button type="button" class="secondary" id="jwcLogin">登录或刷新</button><button type="button" class="secondary" id="jwcClear">清除登录态</button></div>
-</section>
 <section class="panel form-stack" data-capability="chat">
   <h2>Chat</h2>
   <form data-capability="chat" data-form="chat" id="chatForm" class="form-stack" action="/api/settings" method="post">

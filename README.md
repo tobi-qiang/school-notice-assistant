@@ -1,13 +1,14 @@
 [![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/Python-3.13-3776AB.svg?logo=python&logoColor=white)](pyproject.toml)
 [![CI](https://img.shields.io/badge/CI-pytest-44cc11.svg?logo=githubactions&logoColor=white)](.github/workflows/python-tests.yml)
-[![Tests](https://img.shields.io/badge/tests-348%20passed-44cc11.svg)](#%E6%B5%8B%E8%AF%95)
+[![Tests](https://img.shields.io/badge/tests-343%20passed-44cc11.svg)](#%E6%B5%8B%E8%AF%95)
 
 # 学校公告助手
 
-仅在本机运行的苏州大学公告归档、搜索和群分享工具。更多实现细节见 [`AGENTS.md`](AGENTS.md) 与 [`GITHUB_UPLOAD_PLAN.md`](GITHUB_UPLOAD_PLAN.md)。
+面向苏州大学未来科学与工程学院的公告归档、搜索和群分享工具，仅在本机运行。更多实现细节见 [`AGENTS.md`](AGENTS.md) 与 [`GITHUB_UPLOAD_PLAN.md`](GITHUB_UPLOAD_PLAN.md)。
 
-当前版本 **v0.1.1**：修复退出资源清理、教务处登录态复用和 MiniMax-M3 响应处理。
+当前版本 **v0.2.0**：删除教务处登录态持久化，每次同步在弹出窗口手动登录；完善搜索空状态、
+取消提示与同步账号展示；修复若干一致性问题。
 下载见 [GitHub Releases](https://github.com/tobi-qiang/school-notice-assistant/releases)，
 完整变更和验证范围见 [`CHANGELOG.md`](CHANGELOG.md)。
 
@@ -19,11 +20,11 @@
 - **混合搜索**：关键词默认开启，embedding 语义搜索与 rerank 重排可独立开启
 - **群分享**：单篇 10–20 字极简摘要 + 原文链接；按时间窗批量复制
 - **受控后台任务**：同步、AI 富化、搜索都可中断、可恢复；单实例锁避免重复启动
-- **凭据安全**：所有 API key 与教务处会话都用 Windows DPAPI 加密，机器外不可解
+- **凭据安全**：API key 用 Windows DPAPI 加密，机器外不可解；教务处登录每次同步现场完成，Cookie 不落盘
 
 ## 系统要求
 
-- Windows（用了 Windows DPAPI 加密本地凭据，教务处登录态只在本机可解密）
+- Windows（用 Windows DPAPI 加密本地 API key）
 - Python **3.13**（3.13 之前的版本会被 `install.bat` 拒绝）
 - 仅当你需要同步「苏州大学教务处·通知公告」时才需要安装 Google Chrome；
   其他两个来源（未来科学与工程学院·通知公告、未来科学与工程学院·奖惩助贷）
@@ -56,8 +57,8 @@ py -3.13 -m venv .venv
 `git pull --ff-only`，然后重新运行 `install.bat`。使用 Release 源码 ZIP 安装时，将新版本
 解压到新目录，复制原来的 `data/` 到新目录，再运行 `install.bat`。
 
-在同一台 Windows 电脑、同一用户下保留完整 `data/`，可继续使用已有公告和配置；
-学校登录态仍以学校当前是否接受该会话为准。`data/` 含本机凭据，不要上传到仓库。
+在同一台 Windows 电脑、同一用户下保留完整 `data/`，可继续使用已有公告和配置。
+`data/` 含本机凭据，不要上传到仓库；旧版留下的 `data/jwc-session.bin` 已不再使用，可以删除。
 
 ## 启动
 
@@ -92,18 +93,21 @@ Git 仓库，新用户首次启动时会自动创建。文件清单：
 | `data/config.embedding.key` | DPAPI 加密的 embedding API key | 是 |
 | `data/config.rerank.key` | DPAPI 加密的 rerank API key | 是 |
 | `data/config.summary.key` | DPAPI 加密的 summary API key | 是 |
-| `data/jwc-session.bin` | DPAPI 加密的教务处 CAS 登录态 cookie | 是 |
 
-四个 `*.key` 与 `jwc-session.bin` 都是 Windows DPAPI 加密，只能用同一台机器、同一
-用户解出来；搬迁到别的机器或换账号登录会失效，需要重新填或重新登录教务处。
+四个 `*.key` 都是 Windows DPAPI 加密，只能用同一台机器、同一用户解出来；搬迁到别的
+机器或换账号登录会失效，需要重新填写。教务处登录不产生任何本地文件。
 
-`data/config.json`、`*.key` 通过 Web 界面的"设置"页面维护；`data/jwc-session.bin`
-通过"教务处登录"按钮走一次浏览器 CAS 登录后写入。
+`data/config.json` 与 `*.key` 通过 Web 界面的"设置"页面维护。
 
-登录窗口会先恢复已保存、未过期的苏大会话 Cookie；只有公告正文已加载，且同步所用的
-HTTP 请求也能读取正文时，才保存并报告验证成功。同步读取正文后会保存学校更新的 Cookie。
-“已保存登录态”只表示本机存在加密记录；设置页会区分尚未验证、访问验证成功、Cookie
-过期和学校要求重新认证。学校服务器仍可使会话失效，保存 Cookie 不等于永久免登录。
+## 教务处登录
+
+教务处公告正文需要登录才能读取。首次同步遇到受保护正文时，程序会自动打开 Chrome，
+进入苏大官方统一认证页面；你自己完成登录（账号密码只输给学校页面），程序等页面能
+读到正文后继续本次同步。
+
+登录产生的 Cookie 只保存在这一次同步的内存里，程序退出或本次同步结束后即失效：
+**每次触发同步都需要重新登录一次**。设置页不再提供登录态管理，v0.1.1 之前保存的
+`data/jwc-session.bin` 不会被读取，可以随时删除。
 
 ## 测试
 

@@ -162,14 +162,14 @@ def main() -> int:
         )
         lifecycle = LifecycleController(lock, heartbeat, tasks, on_shutdown=close_resources)
         config_store = ConfigStore(DATA_DIR / "config.json")
-        jwc_auth = JWCAuthManager(DATA_DIR / "jwc-session.bin")
+        jwc_auth = JWCAuthManager()
         enrichment = EnrichmentQueue(database, config_store, AIClient, tasks=tasks)
         search_service = SearchService(database, config_store, AIClient)
         # 启动只组装服务，不执行学校抓取或 AI 请求。
         coordinator = SyncCoordinator(database, SOURCES, tasks=tasks, jwc_auth=jwc_auth)
         app = create_app(
             database, coordinator, config_store, enrichment=enrichment,
-            lifecycle=lifecycle, search_service=search_service, jwc_auth=jwc_auth,
+            lifecycle=lifecycle, search_service=search_service,
         )
         # 教务处登录（Playwright）和 AI 请求都在请求线程里阻塞，线程太少时心跳
         # 请求会排队等待，反而被判成"页面没了"。

@@ -5,7 +5,7 @@ import threading
 from typing import Any, Callable
 
 from . import settings
-from .jwc_auth import JWCAuthError
+from .jwc_auth import apply_cookies
 from .webplus import AuthenticationRequired, FetchError, WebPlusClient
 
 
@@ -116,8 +116,6 @@ class SyncCoordinator:
                 client = self._client(source, event)
                 self._source_state(source.key, "running")
                 auth_attempted = False
-                if source.key == "jwc_notices" and self.jwc_auth is not None:
-                    self.jwc_auth.apply_to(client._session)
                 page = 1
                 known_streak = 0
                 while True:
@@ -163,20 +161,14 @@ class SyncCoordinator:
                         except AuthenticationRequired:
                             if source.key != "jwc_notices" or self.jwc_auth is None or auth_attempted:
                                 raise
-                            mark_rejected = getattr(self.jwc_auth, 'mark_rejected', None)
-                            if mark_rejected:
-                                mark_rejected()
                             auth_attempted = True
                             self.set_waiting_auth("请在弹出的苏大统一认证页面完成登录")
-                            try:
-                                self.jwc_auth.login(
-                                    entry.url, cancel_event=event,
-                                    on_status=lambda message: self.set_waiting_auth(message),
-                                )
-                            except JWCAuthError:
-                                raise
-                            if not self.jwc_auth.apply_to(client._session):
-                                raise RuntimeError("教务处登录态保存失败")
+                            cookies = self.jwc_auth.login(
+                                entry.url, cancel_event=event,
+                                on_status=lambda message: self.set_waiting_auth(message),
+                            )
+                            if not apply_cookies(client._session, cookies):
+                                raise RuntimeError("教务处登录态无效")
                             self.clear_waiting_auth()
                             document = client.fetch_detail(source, entry)
                         except FetchError as exc:
@@ -190,10 +182,6 @@ class SyncCoordinator:
                                 self._progress["skipped_count"] += 1
                             self._finish_event(event_seq, "skipped", f"HTTP {exc.status_code}，已跳过")
                             continue
-                        if source.key == 'jwc_notices' and self.jwc_auth is not None:
-                            remember = getattr(self.jwc_auth, 'remember_session', None)
-                            if remember:
-                                remember(client._session)
                         if event.is_set():
                             return self._fail(run_id, "用户取消同步", True, f"{source.key}:{page}")
                         self.database.stage_notice(

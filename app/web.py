@@ -10,9 +10,7 @@ from flask import Flask, jsonify, make_response, render_template, request
 
 from .ai_client import AIClient
 from .config_store import AIConfig, ConfigSecurityError, normalize_chat_url
-from .jwc_auth import JWCAuthError
 from .settings import SOURCES
-from .webplus import WebPlusClient
 
 
 def _bounded_int(value, default: int, minimum: int, maximum: int) -> int:
@@ -24,7 +22,7 @@ def _bounded_int(value, default: int, minimum: int, maximum: int) -> int:
 
 def create_app(
     database, coordinator, config_store, enrichment=None, lifecycle=None,
-    search_service=None, jwc_auth=None,
+    search_service=None,
 ) -> Flask:
     app = Flask(__name__)
     heartbeat = getattr(lifecycle, "heartbeat", lifecycle)
@@ -271,10 +269,7 @@ def create_app(
 
     @app.get("/settings")
     def settings_page():
-        return render_template(
-            "settings.html", config=config_view(),
-            jwc_auth=(jwc_auth.status() if jwc_auth is not None else {"configured": False}),
-        )
+        return render_template("settings.html", config=config_view())
 
     @app.get("/history")
     def share_history():
@@ -303,35 +298,7 @@ def create_app(
             summary_status = getattr(enrichment, "summary_status", None)
             if summary_status is not None:
                 result["summary_job"] = summary_status()
-        if jwc_auth is not None:
-            result["jwc_auth"] = jwc_auth.status()
         return jsonify(result)
-
-    @app.get("/api/jwc-auth")
-    def jwc_auth_status():
-        return jsonify(jwc_auth.status() if jwc_auth is not None else {"configured": False})
-
-    @app.post("/api/jwc-auth/login")
-    def jwc_auth_login():
-        if jwc_auth is None:
-            return jsonify(error="教务处登录管理未配置"), 503
-        source = next((item for item in SOURCES if item.key == "jwc_notices"), None)
-        try:
-            entries = WebPlusClient(interval_seconds=0).fetch_list(source, 1) if source else []
-            if not entries:
-                return jsonify(error="无法读取教务处公告列表"), 502
-            result = jwc_auth.login(entries[0].url)
-        except JWCAuthError as exc:
-            return jsonify(error=str(exc)), 400
-        except Exception as exc:
-            return jsonify(error=f"教务处登录失败：{type(exc).__name__}"), 502
-        return jsonify(status="ok", auth=result)
-
-    @app.post("/api/jwc-auth/clear")
-    def jwc_auth_clear():
-        if jwc_auth is not None:
-            jwc_auth.clear()
-        return jsonify(status="cleared")
 
     @app.post("/api/ai/retry")
     def retry_ai():

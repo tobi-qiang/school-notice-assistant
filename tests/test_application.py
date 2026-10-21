@@ -3,6 +3,8 @@ from __future__ import annotations
 import threading
 from datetime import date
 
+import requests
+
 from app.application import SyncCoordinator
 from app.models import ListEntry, NoticeDocument, SourceConfig
 from app.webplus import AuthenticationRequired, FetchError
@@ -275,19 +277,21 @@ def test_jwc_authentication_is_requested_once_then_detail_retried():
         return document(current_source, current_item)
 
     client.fetch_detail = fetch_detail
-    client._session = object()
+    client._session = requests.Session()
 
     class Auth:
-        def __init__(self): self.login_calls = 0; self.apply_calls = 0
-        def apply_to(self, _session): self.apply_calls += 1; return self.login_calls > 0
-        def login(self, _url, **kwargs): self.login_calls += 1; return {"configured": True}
+        def __init__(self): self.login_calls = 0
+        def login(self, _url, **kwargs):
+            self.login_calls += 1
+            return [dict(name="CASTGC", value="ok", domain="suda.edu.cn", path="/")]
 
     auth = Auth()
     service = SyncCoordinator(
         FakeDatabase(), [src], client_factory=lambda *_: client, jwc_auth=auth
     )
     assert service.run_sync()["status"] == "completed"
-    assert calls["details"] == 2 and auth.login_calls == 1 and auth.apply_calls == 2
+    assert calls["details"] == 2 and auth.login_calls == 1
+    assert any(item.name == "CASTGC" for item in client._session.cookies)
 
 
 
